@@ -25,48 +25,50 @@ def watermark_upload():
     update_image()
 
 
-# If watermark's size has y > x, scale its x to 10% of the image's x. Then scale y to keep same ratio.
-# If watermark's size has x > y, scale its y to 10% of the image's y. Then scale x to keep same ratio.
-def watermark_resize():
-    if image_hub["mark"].size[1] > image_hub["mark"].size[0]:
-        new_x = int(0.1 * image_hub["img"].size[0])
-        scale_ratio = new_x / image_hub["mark"].size[0]
-        new_y = int(image_hub["mark"].size[1] * scale_ratio)
-        image_hub["mark"] = image_hub["mark"].resize((new_x, new_y))
-    else:
-        new_y = int(0.1 * image_hub["img"].size[1])
-        scale_ratio = new_y / image_hub["mark"].size[1]
-        new_x = int(image_hub["mark"].size[0] * scale_ratio)
-        image_hub["mark"] = image_hub["mark"].resize((new_x, new_y))
-
-
 # Scale then paste watermark over image and save result. Create ImageTk to update the image preview label.
-def update_image(anchor=(0, 0)):
-    # Have to catch KeyError as this can be called before both images have been uploaded.
+def update_image():
+    # Catch KeyError as this can be called before both images have been uploaded.
     try:
-        watermark_resize()
         combined_img = image_hub["img"].copy()
-        # Try to use watermark as mask to apply transparency. Catch error and remove mask if no transparency.
+        # If watermark's size has y < x, scale its x to input multiple of image. Then scale y to keep same ratio.
+        # If watermark's size has x < y, scale its y to input multiple of image. Then scale x to keep same ratio.
+        if image_hub["mark"].size[1] < image_hub["mark"].size[0]:
+            new_x = int(scale_var.get() * image_hub["img"].size[0])
+            scale_ratio = new_x / image_hub["mark"].size[0]
+            new_y = int(image_hub["mark"].size[1] * scale_ratio)
+            scaled_mark = image_hub["mark"].resize((new_x, new_y))
+        else:
+            new_y = int(scale_var.get() * image_hub["img"].size[1])
+            scale_ratio = new_y / image_hub["mark"].size[1]
+            new_x = int(image_hub["mark"].size[0] * scale_ratio)
+            scaled_mark = image_hub["mark"].resize((new_x, new_y))
+        # Try to use watermark as mask to apply transparency. Catch error and use no mask if no transparency.
         try:
-            combined_img.paste(image_hub["mark"], box=anchor, mask=image_hub["mark"])
+            combined_img.paste(scaled_mark, box=image_hub["anchor"], mask=scaled_mark)
         except ValueError:
-            combined_img.paste(image_hub["mark"], box=anchor)
-
+            combined_img.paste(scaled_mark, box=image_hub["anchor"])
+        # Just used to update GUI
         img_tk = ImageTk.PhotoImage(combined_img)
         current_image.configure(image=img_tk)
         current_image.image = img_tk
 
-        combined_img.save("marked images/combined.jpg", "JPEG")
+        combined_img.save("marked images/combined.png", "PNG")
     except KeyError:
         pass
 
 
 def watermark_move(event):
-    update_image((event.x, event.y))
+    image_hub["anchor"] = (event.x, event.y)
+    update_image()
 
 
-# Used to store Image objects for image upload, watermark upload, and current blend of the two.
-image_hub = {}
+def scale_update(event):
+    scale_var.set(event)
+    update_image()
+
+
+# Used to store Image objects for image upload, watermark upload, and current anchor.
+image_hub = {"anchor": (0, 0)}
 
 root = Tk()
 root.columnconfigure(0, weight=1)
@@ -86,13 +88,14 @@ current_image.grid(column=0, row=1, sticky="nsew")
 current_image.bind("<Button-1>", watermark_move)
 current_image.bind("<B1-Motion>", watermark_move)
 
-# Buttons + Path labels are their own frame with a 2x2 grid.
+# Sub frame to contain upload buttons + labels and scale widget + label.
 button_frame = ttk.Frame(frame, padding=10)
 button_frame.grid(column=0, row=2, sticky="nswe")
 button_frame.columnconfigure(0, weight=1)
 button_frame.columnconfigure(1, weight=2)
 
-ttk.Button(button_frame, text="Upload Image", command=image_upload).grid(column=0, row=0, sticky="ew")
+image_button = ttk.Button(button_frame, text="Upload Image", command=image_upload)
+image_button.grid(column=0, row=0, sticky="ew")
 watermark_button = ttk.Button(button_frame, text="Upload Watermark", command=watermark_upload)
 watermark_button.grid(column=0, row=1, sticky="ew")
 
@@ -100,5 +103,13 @@ image_path = ttk.Label(button_frame, text="Current Image: NONE", background="whi
 image_path.grid(column=1, row=0, sticky="ew")
 watermark_path = ttk.Label(button_frame, text="Current Watermark: NONE", background="white")
 watermark_path.grid(column=1, row=1, sticky="ew")
+
+scale_label = ttk.Label(button_frame, text="Watermark Scale (%): ")
+scale_label.grid(column=0, row=2, sticky="e")
+
+scale_var = DoubleVar()
+scale = ttk.Scale(button_frame, from_=0.01, to=0.9, length=300, variable=scale_var, command=scale_update)
+scale_var.set(0.3)
+scale.grid(column=1, row=2, sticky="w")
 
 root.mainloop()
